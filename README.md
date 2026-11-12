@@ -14,6 +14,7 @@ A browser-based configuration tool for AULA keyboards and mice, built from rever
 | AULA F75 | USB | lighting, keymap (base layer), macros, settings | Untested: built from the vendor's code only |
 | AULA F75 Max | USB, 2.4 GHz dongle | lighting, per-key RGB, keymap (base + Fn), macros, screen GIF (128 × 128), settings | Untested: same protocol and IDs as the S75 Pro, selected by product name `F75 Max`; layout reused from the S75 Pro |
 | SMAILWOLF M3 Pro / M3 Pro+ (mouse) | USB, 2.4 GHz receiver | DPI stages, buttons, macros, polling and sensor settings, battery | Untested here: byte layouts taken from the MIT-licensed [Smail-Wolf-M3-Pro](https://github.com/duyzoz/Smail-Wolf-M3-Pro) driver, which measured them on a real M3 Pro; the M3 Pro+ is assumed to be identical |
+| Logitech G304 / G305 (mouse) | Lightspeed receiver | current DPI, polling rate, battery (HID++ 2.0, host mode) | Untested: built from the public HID++ 2.0 documentation used by Solaar and libratbag. Settings last until the mouse is switched off; DPI stages and buttons in the onboard profile are not changed |
 
 Only the S75 Pro, and the SC620's button map, have been checked against a real device. Everything else is implemented from the decompiled or decoded vendor software and covered by offline tests, but may still be wrong in ways only hardware would reveal. Check the **Log** tab while testing; it shows every packet sent and received.
 
