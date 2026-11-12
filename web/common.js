@@ -18,7 +18,8 @@ export function toU8(dv, want) {
 }
 
 // Models can share USB IDs; an entry may add `name` (must match productName) or `notName` (must not).
-export const matchesId = (dev, ids) => ids.some((i) => i.vendorId === dev.vendorId && i.productId === dev.productId
+// An entry without `productId` matches any product of that vendor (the protocol's discover() then checks the reports).
+export const matchesId = (dev, ids) => ids.some((i) => i.vendorId === dev.vendorId && (i.productId == null || i.productId === dev.productId)
   && (!i.name || i.name.test(dev.productName ?? ''))
   && (!i.notName || !i.notName.test(dev.productName ?? '')));
 
