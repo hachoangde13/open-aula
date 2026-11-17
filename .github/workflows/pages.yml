@@ -24,6 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stamp the build so browsers never run stale cached code
+        run: |
+          V="${GITHUB_SHA::7}"
+          find web -name '*.js' -exec sed -i -E "s#(from '[^']+\.js)'#\1?v=$V'#" {} +
+          sed -i -e "s#app\.js\"#app.js?v=$V\"#" -e "s#style\.css\"#style.css?v=$V\"#" -e "s#__BUILD__#$V#" web/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

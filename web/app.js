@@ -948,6 +948,7 @@ function initModelUi() {
   applyFeatures();
 }
 
+if ($('#build').textContent.startsWith('__')) $('#build').textContent = 'dev';
 initTabs();
 initModelUi();
 initConnection();
