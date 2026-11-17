@@ -849,11 +849,29 @@ function initUpdates() {
     `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`).join('') || '<li>No official download page found for this model.</li>';
   $('#fw-note').textContent = u.note ?? '';
   $('#fw-latest').textContent = u.latest ? `Latest firmware known: ${u.latest}` : 'The maker does not publish a latest firmware number; check it in the official tool.';
+  // Devices with a version command are asked directly. Keyboards have none that is known, so the
+  // page reads the release number from the USB device descriptor (WebUSB), which makers normally
+  // set to the firmware version. That needs the cable: a dongle would report its own version.
   const can = !!kb.firmware;
+  const wired = (model.usb ?? []).filter((u) => u.role === 'usb' && u.productId != null).map(({ vendorId, productId }) => ({ vendorId, productId }));
+  const viaUsb = !can && wired.length > 0 && 'usb' in navigator;
   $('#fw-read').hidden = !can;
+  $('#fw-usb').hidden = !viaUsb;
   $('#fw-value').textContent = can ? 'Connect the device, then read.'
-    : 'This keyboard has no known command for reading its firmware version. The official driver shows it (About / firmware page).';
+    : viaUsb ? 'Plug the keyboard in with its cable, then read. Pick the keyboard in the browser dialog.'
+      : 'This model has no known way to report its firmware version here; the official driver shows it.';
   if (!can) $('#fw-latest').textContent = '';
+  $('#fw-usb').onclick = (e) => run(e.target, 'Firmware', async () => {
+    let d;
+    try {
+      d = await navigator.usb.requestDevice({ filters: wired });
+    } catch (err) {
+      if (err.name === 'NotFoundError') throw new Error('No device chosen. If the list was empty, the browser hides this keyboard from WebUSB; use the official driver');
+      throw err;
+    }
+    const v = `${d.deviceVersionMajor}.${d.deviceVersionMinor}${d.deviceVersionSubminor}`;
+    $('#fw-value').textContent = `USB device version ${v} (${d.productName || 'unnamed device'}). Makers normally set this to the firmware version.`;
+  });
   $('#fw-read').onclick = (e) => run(e.target, 'Firmware', async () => {
     if (kb.mode === 'sim') throw new Error('Connect a real device first');
     const v = kb.firmware ? await kb.firmware() : null;
