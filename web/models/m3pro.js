@@ -34,4 +34,11 @@ export default {
     { key: 'angleSnap', label: 'Line correction', type: 'check', default: 0 },
     { key: 'esports', label: 'High-speed mode', type: 'check', default: 0 },
   ],
+  updates: {
+    latest: '3.1.2',
+    links: [
+      { label: 'SMAILWOLF website', url: 'https://smailwolf.com/sb/' },
+    ],
+    note: 'The official app offers firmware 3.1.2, but this web driver was built from measurements on firmware 2.1.3. After updating, check the Log tab: if settings stop applying, the protocol changed.',
+  },
 };

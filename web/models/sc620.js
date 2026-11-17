@@ -37,4 +37,10 @@ export default {
     { key: 'angleSnap', label: 'Angle snap', type: 'check', default: 0 },
     { key: 'motionSync', label: 'Motion sync', type: 'check', default: 1 },
   ],
+  updates: {
+    links: [
+      { label: 'AULA download page', url: 'https://www.aulagaming.com/pages/download' },
+      { label: 'AULA SC620 driver (AULA Gear)', url: 'https://aulagear.com/blogs/software/aula-sc620-driver' },
+    ],
+  },
 };

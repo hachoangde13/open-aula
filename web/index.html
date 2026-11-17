@@ -35,6 +35,7 @@
     <button data-tab="macros">Macros</button>
     <button data-tab="screen">Screen</button>
     <button data-tab="settings">Settings</button>
+    <button data-tab="updates">Updates</button>
     <button data-tab="log">Log</button>
   </nav>
 
@@ -235,6 +236,20 @@
           <button id="s-export">Export config</button>
           <label class="file-btn">Import config <input type="file" id="s-import" accept="application/json" hidden></label>
         </div>
+      </div>
+    </section>
+
+    <section id="tab-updates" class="tab">
+      <div class="card">
+        <h2>Firmware on the device</h2>
+        <div class="toolbar"><button id="fw-read">Read firmware version</button><span id="fw-value" class="hint">Connect the device, then read.</span></div>
+        <p id="fw-latest" class="hint"></p>
+      </div>
+      <div class="card">
+        <h2>Official drivers and firmware</h2>
+        <p class="hint">This page does not flash firmware: a failed flash can brick the device, and only the maker's updater knows the bootloader. Update firmware with the official tool below, then come back; this web driver itself updates every time you reload the page.</p>
+        <ul id="fw-links" class="links"></ul>
+        <p id="fw-note" class="hint"></p>
       </div>
     </section>
 

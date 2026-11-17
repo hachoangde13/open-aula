@@ -15,6 +15,13 @@ export default {
   features: { ...s75pro.features, bar: false },
   barModes: [],
   screen: { width: 128, height: 128, headLength: 256, maxFrames: 255, chunk: 4096 },
+  updates: {
+    links: [
+      { label: 'Epomaker x AULA F75 Max driver (Windows, v1.0.0.5)', url: 'https://epomaker.com/blogs/software/epomaker-x-aula-f75-max-driver' },
+      { label: 'AULA F75 Max driver (AULA Gear, ISO-DE layout)', url: 'https://aulagear.com/blogs/software/aula-f75-max' },
+    ],
+    note: 'No official firmware file was found for the F75 Max.',
+  },
 };
 
 export { F75_MAX_NAME };

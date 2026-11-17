@@ -31,4 +31,11 @@ export default {
   settings: [
     { key: 'rate', label: 'Polling rate', type: 'select', default: 4, options: [[1, '125 Hz'], [2, '250 Hz'], [3, '500 Hz'], [4, '1000 Hz']] },
   ],
+  updates: {
+    links: [
+      { label: 'Logitech G HUB (updates the mouse and receiver firmware)', url: 'https://support.logi.com/hc/en-001/articles/360057042294-Logitech-G-HUB' },
+      { label: 'G HUB release notes (firmware entries)', url: 'https://support.logi.com/hc/en-150/articles/360048967733-G-HUB-Update-Release-Notes' },
+    ],
+    note: 'Logitech only ships firmware through G HUB, which updates it automatically. Writing settings here afterwards is fine: they go into the onboard profile.',
+  },
 };

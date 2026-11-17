@@ -185,3 +185,5 @@ progress { width: 100%; margin-top: 12px; }
   white-space: pre-wrap; word-break: break-all; cursor: copy;
 }
 .tips code { font: 12px ui-monospace, Menlo, Consolas, monospace; }
+.links { margin: 8px 0 0; padding-left: 20px; line-height: 1.9; }
+.links a { color: var(--accent, #3b6fd8); word-break: break-word; }

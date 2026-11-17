@@ -8,7 +8,7 @@ import { Mouse55 } from './mouse55.js';
 // fall back to host-mode DPI and report rate.
 
 export const REPORT = { SHORT: 0x10, LONG: 0x11 };
-export const FEATURE = { ROOT: 0x0000, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004, DPI: 0x2201, RATE: 0x8060, ONBOARD: 0x8100 };
+export const FEATURE = { ROOT: 0x0000, FW_VERSION: 0x0003, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004, DPI: 0x2201, RATE: 0x8060, ONBOARD: 0x8100 };
 export const RATE_MS = { 1: 8, 2: 4, 3: 2, 4: 1 }; // settings value -> ms per report (125/250/500/1000 Hz)
 const SW = 0x0a;
 const HOST_MODE = 2;
@@ -232,6 +232,22 @@ export class HidPP extends Mouse55 {
       await this.call(FEATURE.DPI, 3, [0, dpi >> 8, dpi & 0xff]);
       const ms = RATE_MS[m.rate];
       if (ms && !(await this.call(FEATURE.RATE, 2, [ms]))) this.log('⚠', 'Report rate feature not found');
+    });
+  }
+
+  // Main application firmware from feature 0x0003, formatted like Solaar: "U1 19.02.B0012".
+  firmware() {
+    return this.exclusive(async () => {
+      const n = await this.call(FEATURE.FW_VERSION, 0, []);
+      if (!n) return null;
+      const h = (v, w) => v.toString(16).toUpperCase().padStart(w, '0');
+      for (let i = 0; i < n[3]; i++) {
+        const r = await this.call(FEATURE.FW_VERSION, 1, [i]);
+        if (r[3] !== 0) continue;
+        const prefix = String.fromCharCode(...r.subarray(4, 7)).replace(/\0/g, '').trim();
+        return `${prefix} ${h(r[7], 2)}.${h(r[8], 2)}.B${h((r[9] << 8) | r[10], 4)}`;
+      }
+      return null;
     });
   }
 

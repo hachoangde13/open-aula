@@ -30,4 +30,10 @@ export default {
     { key: 'sleep', label: 'Sleep after (wireless)', type: 'select', default: 10, options: [[0, 'Never'], [2, '1 min'], [3, '1.5 min'], [4, '2 min'], [6, '3 min'], [8, '4 min'], [10, '5 min'], [20, '10 min'], [30, '15 min'], [40, '20 min']] },
     { key: 'debounce', label: 'Debounce', type: 'select', default: 1, options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
   ],
+  updates: {
+    links: [
+      { label: 'AULA download page', url: 'https://www.aulagaming.com/pages/download' },
+      { label: 'AULA driver list (aulastar.com)', url: 'https://www.aulastar.com/drive/list_28_5/' },
+    ],
+  },
 };

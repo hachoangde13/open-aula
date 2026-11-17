@@ -211,7 +211,7 @@ function initConnection() {
 
 function applyFeatures() {
   const f = model.features;
-  $$('#tabs button').forEach((b) => (b.hidden = b.dataset.tab !== 'log' && !f[b.dataset.tab]));
+  $$('#tabs button').forEach((b) => (b.hidden = !['log', 'updates'].includes(b.dataset.tab) && !f[b.dataset.tab]));
   $('#bar-card').hidden = !f.bar;
   $('#matrix-card').hidden = !f.matrix;
   $('#reset-card').hidden = !f.reset;
@@ -805,6 +805,23 @@ function initButtons() {
   $('#btn-apply').onclick = (e) => run(e.target, 'Buttons', () => kb.setButtons(M.buttons, state.macros));
 }
 
+// ---------- updates ----------
+
+function initUpdates() {
+  const u = model.updates ?? {};
+  $('#fw-links').innerHTML = (u.links ?? []).map(({ label, url }) =>
+    `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`).join('') || '<li>No official download page found for this model.</li>';
+  $('#fw-note').textContent = u.note ?? '';
+  $('#fw-latest').textContent = u.latest ? `Latest firmware known: ${u.latest}` : 'The maker does not publish a latest firmware number; check it in the official tool.';
+  $('#fw-value').textContent = 'Connect the device, then read.';
+  $('#fw-read').onclick = (e) => run(e.target, 'Firmware', async () => {
+    if (kb.mode === 'sim') throw new Error('Connect a real device first');
+    const v = kb.firmware ? await kb.firmware() : null;
+    $('#fw-value').textContent = v ? `Firmware ${v}` : 'This model does not report its firmware version.';
+    if (v && u.latest) $('#fw-value').textContent += v.replace(/^\D+/, '') === u.latest ? ' (latest)' : ` (latest known: ${u.latest})`;
+  });
+}
+
 // ---------- settings ----------
 
 function initSettings() {
@@ -869,6 +886,7 @@ function initModelUi() {
   initMacros();
   initScreen();
   initSettings();
+  initUpdates();
   applyFeatures();
 }
 

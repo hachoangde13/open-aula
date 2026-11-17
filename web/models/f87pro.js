@@ -47,4 +47,12 @@ export default {
     { key: 'response', label: 'Key response time', type: 'select', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']], default: 3 },
     { key: 'rate', label: 'Polling rate', type: 'select', options: [[3, '1000 Hz'], [5, '4000 Hz'], [6, '8000 Hz']], default: 3 },
   ],
+  updates: {
+    links: [
+      { label: 'AULA download page', url: 'https://www.aulagaming.com/pages/download' },
+      { label: 'AULA driver list (aulastar.com)', url: 'https://www.aulastar.com/drive/list_28_5/' },
+      { label: 'AULA F87 Pro V2 support page', url: 'https://www.aulastar.com/faq/501.html' },
+    ],
+    note: 'The F87 Pro V2 has separate Bluetooth variants; pick the driver that matches the label on your keyboard.',
+  },
 };

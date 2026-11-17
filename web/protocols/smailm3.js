@@ -149,6 +149,14 @@ export class SmailM3 extends Mouse55 {
     await this.xfer(frame([CMD.COMMIT, 0xa5, 0x22, 0, 0, 0, 5]));
   }
 
+  // Version reply: the last five non-zero bytes are ASCII, e.g. "2.1.3".
+  firmware() {
+    return this.exclusive(async () => {
+      const r = await this.xfer(frame([0x04]), { need: true });
+      return String.fromCharCode(...Array.from(r).filter((b) => b).slice(-5));
+    });
+  }
+
   battery() {
     return this.exclusive(async () => {
       const r = await this.xfer(frame([CMD.BATTERY, 0xa5, 0x0b, 0x2e, 1, 1, 1])).catch(() => null);

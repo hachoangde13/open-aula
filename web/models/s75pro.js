@@ -40,4 +40,12 @@ export default {
     { key: 'response', label: 'Key response (debounce)', type: 'select', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']], default: 1 },
   ],
   screen: { width: 135, height: 240, headLength: 256, maxFrames: 141, chunk: 4096 },
+  updates: {
+    links: [
+      { label: 'AULA download page (drivers and firmware)', url: 'https://www.aulagaming.com/pages/download' },
+      { label: 'AULA HUB web driver', url: 'https://www.aulastar.com/aula-hub/' },
+      { label: 'AULA S75 Pro support page', url: 'https://www.aulastar.com/faq/821.html' },
+    ],
+    note: 'The Windows driver needs the keyboard in wired mode. Separate firmware files (for example a screen GIF fix) are listed on the AULA download page; install them only if you need them.',
+  },
 };
