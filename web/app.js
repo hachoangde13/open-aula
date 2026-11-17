@@ -849,11 +849,15 @@ function initUpdates() {
     `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`).join('') || '<li>No official download page found for this model.</li>';
   $('#fw-note').textContent = u.note ?? '';
   $('#fw-latest').textContent = u.latest ? `Latest firmware known: ${u.latest}` : 'The maker does not publish a latest firmware number; check it in the official tool.';
-  $('#fw-value').textContent = 'Connect the device, then read.';
+  const can = !!kb.firmware;
+  $('#fw-read').hidden = !can;
+  $('#fw-value').textContent = can ? 'Connect the device, then read.'
+    : 'This keyboard has no known command for reading its firmware version. The official driver shows it (About / firmware page).';
+  if (!can) $('#fw-latest').textContent = '';
   $('#fw-read').onclick = (e) => run(e.target, 'Firmware', async () => {
     if (kb.mode === 'sim') throw new Error('Connect a real device first');
     const v = kb.firmware ? await kb.firmware() : null;
-    $('#fw-value').textContent = v ? `Firmware ${v}` : 'This model does not report its firmware version.';
+    $('#fw-value').textContent = v ? `Firmware ${v}` : 'The device did not answer the firmware query (see the Log tab).';
     if (v && u.latest) $('#fw-value').textContent += v.replace(/^\D+/, '') === u.latest ? ' (latest)' : ` (latest known: ${u.latest})`;
   });
 }

@@ -201,6 +201,15 @@ export class Mouse55 {
     return this.exclusive(() => this.writeMacros(macros));
   }
 
+  // Command 03: reply bytes 3-5 are ASCII digits, e.g. "122" for V1.2.2 (from the vendor driver; untested).
+  firmware() {
+    return this.exclusive(async () => {
+      const r = await this.send(CMD.VERSION, 0, 0, []);
+      const d = Array.from(r.subarray(3, 6));
+      return d.every((c) => c >= 0x30 && c <= 0x39) ? d.map((c) => String.fromCharCode(c)).join('.') : `raw ${hex(r.subarray(2, 8))}`;
+    });
+  }
+
   battery() {
     return this.exclusive(async () => {
       if (this.mode !== '2.4g') return null;

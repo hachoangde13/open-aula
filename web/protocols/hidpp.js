@@ -295,13 +295,15 @@ export class HidPP extends Mouse55 {
       const n = await this.call(FEATURE.FW_VERSION, 0, []);
       if (!n) return null;
       const h = (v, w) => v.toString(16).toUpperCase().padStart(w, '0');
+      const fmt = (r) => `${String.fromCharCode(...r.subarray(4, 7)).replace(/\0/g, '').trim()} ${h(r[7], 2)}.${h(r[8], 2)}.B${h((r[9] << 8) | r[10], 4)}`;
+      let first = null;
       for (let i = 0; i < n[3]; i++) {
-        const r = await this.call(FEATURE.FW_VERSION, 1, [i]);
-        if ((r[3] & 0x0f) !== 0) continue; // 0 = main application
-        const prefix = String.fromCharCode(...r.subarray(4, 7)).replace(/\0/g, '').trim();
-        return `${prefix} ${h(r[7], 2)}.${h(r[8], 2)}.B${h((r[9] << 8) | r[10], 4)}`;
+        const r = await this.call(FEATURE.FW_VERSION, 1, [i]).catch(() => null);
+        if (!r) continue;
+        if ((r[3] & 0x0f) === 0) return fmt(r); // 0 = main application
+        first ??= fmt(r);
       }
-      return null;
+      return first;
     });
   }
 
