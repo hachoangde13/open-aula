@@ -61,6 +61,35 @@ export function encodeBinding(a) {
   }
 }
 
+// Onboard binding -> app action; null for anything this page cannot edit (macros, other specials).
+export function decodeBinding(b) {
+  const [t, a, c, d] = b;
+  if (t === 0xff) return { type: 'disable' };
+  if (t === 0x90) return a === SPECIAL_DPI_CYCLE ? { type: 'dpiLoop' } : null;
+  if (t !== 0x80) return null;
+  if (a === 0x01) {
+    const id = Object.keys(MOUSE_BITS).find((k) => MOUSE_BITS[k] === ((c << 8) | d));
+    return id ? { type: 'mouse', id: +id } : null;
+  }
+  if (a === 0x02) return { type: 'key', mods: c, code: d };
+  if (a === 0x03) return { type: 'media', usage: (c << 8) | d };
+  return null;
+}
+
+export function parseProfile(p, buttons) {
+  const dpi = [];
+  for (let i = 0; i < PROFILE.DPI_SLOTS; i++) {
+    const v = p[PROFILE.DPI + i * 2] | (p[PROFILE.DPI + i * 2 + 1] << 8);
+    if (v && v !== 0xffff) dpi.push(clampDpi(v));
+  }
+  if (!dpi.length) dpi.push(800);
+  const rate = +Object.keys(RATE_MS).find((k) => RATE_MS[k] === p[PROFILE.RATE]) || 4;
+  return {
+    rate, dpi, dpiIndex: Math.min(p[PROFILE.DEFAULT_DPI], dpi.length - 1),
+    buttons: Array.from({ length: buttons }, (_, i) => decodeBinding(p.subarray(PROFILE.BUTTONS + i * 4, PROFILE.BUTTONS + i * 4 + 4))),
+  };
+}
+
 export function applyButtons(profile, buttons, count) {
   for (let i = 0; i < count; i++) {
     const b = encodeBinding(buttons?.[i]);
@@ -188,9 +217,9 @@ export class HidPP extends Mouse55 {
 
   // Read the active profile, let `edit` change it, and write it back to a user sector.
   // A ROM profile (read-only) is copied to user sector 1 and enabled in the profile directory.
-  async editProfile(edit) {
+  async loadProfile() {
     const info = await this.onboardInfo();
-    if (!info) return false;
+    if (!info) return null;
     const cur = await this.call(FEATURE.ONBOARD, 4, []);
     let sector = (cur[3] << 8) | cur[4];
     const user = sector >= 1 && sector <= info.profiles;
@@ -201,6 +230,21 @@ export class HidPP extends Mouse55 {
     if (user ? !crcOk(profile) : !plausibleProfile(profile)) {
       throw new Error(`Onboard profile 0x${sector.toString(16)} has an unexpected format; nothing was written`);
     }
+    return { info, sector, user, profile };
+  }
+
+  // Read what the mouse holds now: DPI stages, report rate and button bindings of the active profile.
+  readMouseConfig() {
+    return this.exclusive(async () => {
+      const l = await this.loadProfile();
+      return l ? parseProfile(l.profile, Math.min(l.info.buttons, 16)) : null;
+    });
+  }
+
+  async editProfile(edit) {
+    const l = await this.loadProfile();
+    if (!l) return false;
+    const { info, sector, user, profile } = l;
     edit(profile, info);
     sealCrc(profile);
     const target = user ? sector : 1;

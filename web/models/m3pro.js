@@ -27,9 +27,9 @@ export default {
   },
   settings: [
     { key: 'rate', label: 'Polling rate', type: 'select', default: 4, options: [[1, '125 Hz'], [2, '250 Hz'], [3, '500 Hz'], [4, '1000 Hz']] },
-    { key: 'sleep', label: 'Sleep after', type: 'select', default: 10, options: [[0, 'Never'], [1, '1 min'], [5, '5 min'], [10, '10 min'], [30, '30 min'], [60, '1 hour'], [100, '100 min']] },
+    { key: 'sleep', label: 'Sleep after (minutes, 0 = never)', type: 'number', min: 0, max: 100, default: 10 },
     { key: 'debounce', label: 'Button debounce (ms)', type: 'number', min: 0, max: 30, default: 8 },
-    { key: 'liftoff', label: 'Lift-off distance', type: 'select', default: 1, options: [[1, 'Low (1 mm)'], [2, 'High (2 mm)']] },
+    { key: 'liftoff', label: 'Lift-off distance', type: 'select', default: 1, options: [[0, 'Default'], [1, 'Low (1 mm)'], [2, 'High (2 mm)']] },
     { key: 'scrollReverse', label: 'Reverse scroll direction', type: 'check', default: 0 },
     { key: 'angleSnap', label: 'Line correction', type: 'check', default: 0 },
     { key: 'esports', label: 'High-speed mode', type: 'check', default: 0 },

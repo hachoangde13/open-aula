@@ -94,6 +94,39 @@ export function macroBlock(macros) {
   return Uint8Array.from([...table, 0, 0, 0x80, 0, ...body]);
 }
 
+// Reply checksum: byte 2 = sum of bytes 3.. (mod 256), proven on the measured replies.
+export const replyOk = (r) => r.subarray(3).reduce((a, b) => a + b, 0) % 256 === r[2];
+
+// 4-byte binding -> app button action; null when it is the slot's default (or not understood).
+export function decodeButton(b, slot) {
+  const [t, a, c, d] = b;
+  const def = DEFAULT_BUTTONS[slot];
+  if (def && def.every((x, i) => x === b[i])) return null;
+  if (t === 0x00 || (t === 0x10 && !a && !c)) return { type: 'disable' };
+  if (t === 0x20) {
+    const id = c === 0x02 && a === 0x01 ? 4 : { 0x01: 1, 0x04: 2, 0x02: 3, 0x08: 7, 0x10: 8 }[a];
+    return id ? { type: 'mouse', id } : null;
+  }
+  if (t === 0x21 && a === 0x38) return { type: 'mouse', id: c === 0x01 ? 5 : 6 };
+  if (t === 0x21 && a === 0x55) return { type: 'dpiLoop' };
+  if (t === 0x10) return { type: 'key', mods: a, code: c };
+  if (t === 0x30) return { type: 'media', usage: a | (c << 8) };
+  if (t === 0x70) return { type: 'macro', index: a, mode: d === 2 ? 1 : d === 3 ? 2 : 0, loops: d ? 1 : c };
+  return null;
+}
+
+// Config read reply (command 0x0e) -> the fields setMouseConfig() takes; null when the mouse answers empty.
+export function parseConfig(r) {
+  if ([13, 14, 15].every((i) => r[i] === 0) || [13, 14, 15].every((i) => r[i] === 0xff)) return null;
+  const count = Math.max(1, Math.min(6, r[10]));
+  return {
+    rate: r[9],
+    dpi: Array.from({ length: count }, (_, i) => Math.max(50, Math.min(26000, r[12 + i * 2] | (r[13 + i * 2] << 8)))),
+    dpiIndex: Math.max(0, Math.min(count - 1, r[11] - 1)),
+    scrollReverse: r[47] ? 1 : 0, liftoff: r[48], angleSnap: r[49] & 1, debounce: r[50], sleep: r[51], esports: r[52] ? 1 : 0,
+  };
+}
+
 export class SmailM3 extends Mouse55 {
   static async discover(devices, model) {
     for (const d of devices) {
@@ -150,6 +183,20 @@ export class SmailM3 extends Mouse55 {
       await this.xfer(frame([CMD.MACRO, 0, sum, ...head], part, 7));
     }
     await this.xfer(frame([CMD.COMMIT, 0xa5, 0x22, 0, 0, 0, 5]));
+  }
+
+  // Read what the mouse holds now: settings, DPI stages and button bindings.
+  readMouseConfig() {
+    return this.exclusive(async () => {
+      const k = await this.xfer(frame([0x08, 0xa5, 0x0b, 0x2c]), { need: true });
+      const c = await this.xfer(frame([0x0e, 0xa5, 0x0b, 0x2e, 1, 1, 1]), { need: true });
+      if (!replyOk(c) || !replyOk(k)) throw new Error('Reply checksum mismatch');
+      const cfg = parseConfig(c);
+      if (!cfg) throw new Error('The mouse returned an empty configuration');
+      const buttons = [];
+      for (let i = 0; i < 8; i++) buttons[i] = decodeButton(k.subarray(7 + i * 4, 11 + i * 4), i);
+      return { ...cfg, buttons };
+    });
   }
 
   // Version reply: the last five non-zero bytes are ASCII, e.g. "2.1.3".

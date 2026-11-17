@@ -130,6 +130,21 @@ async function sync(preferId) {
   activate(connected.get(preferId) ?? (kb.mode !== 'sim' ? connected.get(kb.model.id) : null) ?? connected.values().next().value);
 }
 
+// Mice that can report their settings: show what the device holds instead of this browser's last values.
+const pulled = new WeakSet();
+async function pullFromDevice(k) {
+  const c = await k.readMouseConfig();
+  if (!c || k !== kb) return false;
+  const { dpi, dpiIndex, buttons, ...settings } = c;
+  const colors = state.mouse.dpiColors;
+  state.mouse = { ...state.mouse, dpi, dpiIndex, buttons, dpiColors: dpi.map((_, i) => colors[i] ?? [255, 255, 255]) };
+  for (const f of model.settings ?? []) if (f.key in settings) state.settings[f.key] = settings[f.key];
+  save();
+  initDpi(); initButtons(); initSettings();
+  log('ℹ', `read settings from ${k.model.name}`);
+  return true;
+}
+
 function activate(k) {
   if (!k) {
     if (kb.mode !== 'sim') kb = simulator(model, { log, delay: state.delay });
@@ -137,6 +152,10 @@ function activate(k) {
     kb = k;
     kb.delay = state.delay;
     if (k.model.id !== model.id) setModel(k.model);
+  }
+  if (k && k.readMouseConfig && !pulled.has(k)) {
+    pulled.add(k);
+    pullFromDevice(k).catch((e) => log('⚠', `Could not read the mouse's settings: ${e.message}`));
   }
   setStatus();
 }
@@ -750,6 +769,11 @@ function initDpi() {
     color.oninput = () => { M.dpiColors[i] = hexToRgb(color.value); save(); };
     root.appendChild(row);
   });
+  $('#dev-read').hidden = !kb.readMouseConfig;
+  $('#dev-read').onclick = (e) => run(e.target, 'Read', async () => {
+    if (kb.mode === 'sim') throw new Error('Connect the mouse first');
+    if (!(await pullFromDevice(kb))) throw new Error('This mouse has no readable profile');
+  });
   $('#dpi-apply').onclick = (e) => run(e.target, 'DPI', () => kb.setMouseConfig(mouseConfig()));
 }
 
@@ -770,7 +794,8 @@ function initButtons() {
     const typeSel = `<select data-f="type">${types.map(([v, n]) => `<option value="${v}" ${a.type === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
     const sub = {
       mouse: `<select data-f="id">${MOUSE_ACTIONS.map((m) => `<option value="${m.id}" ${a.id === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</select>`,
-      key: `<select data-f="code">${Object.entries(HID_NAMES).map(([c, n]) => `<option value="${c}" ${a.code === +c ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
+      key: `${[['Ctrl', 1], ['Shift', 2], ['Alt', 4], ['Win', 8]].map(([n, bit]) => `<label class="check"><input type="checkbox" data-m="${bit}" ${(a.mods ?? 0) & bit ? 'checked' : ''}> ${n}</label>`).join('')}
+        <select data-f="code">${Object.entries(HID_NAMES).map(([c, n]) => `<option value="${c}" ${a.code === +c ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
       media: `<select data-f="usage">${MEDIA_ACTIONS.map(([n, u]) => `<option value="${u}" ${a.usage === u ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
       macro: `<select data-f="index">${state.macros.map((m, j) => `<option value="${j}" ${a.index === j ? 'selected' : ''}>${j + 1}. ${escapeHtml(m.name)}</option>`).join('')}</select>
         <select data-f="mode">${(model.macroPlay ?? []).map((n, j) => `<option value="${j}" ${a.mode === j ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -792,6 +817,9 @@ function initButtons() {
       row.onmouseleave = () => dot.classList.remove('focus');
       view.appendChild(dot);
     }
+    row.querySelectorAll('[data-m]').forEach((el) => {
+      el.onchange = () => { M.buttons[i] = { ...a, mods: (a.mods ?? 0) ^ +el.dataset.m }; save(); initButtons(); };
+    });
     row.querySelectorAll('[data-f]').forEach((el) => {
       el.onchange = () => {
         const f = el.dataset.f;
