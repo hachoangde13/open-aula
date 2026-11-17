@@ -2,14 +2,78 @@ import { sleep, hex, Unsupported } from '../common.js';
 import { Mouse55 } from './mouse55.js';
 
 // Logitech HID++ 2.0 over a Lightspeed receiver (G304 / G305 and similar), as documented by the
-// open-source Solaar and libratbag projects. Only host-mode settings are written: the current DPI,
-// the report rate and the battery read. Onboard-profile flash (DPI stages, buttons) is not touched.
+// open-source Solaar and libratbag projects. DPI stages, report rate and buttons are written into the
+// mouse's onboard profile (feature 0x8100) with a read-modify-write, so they survive power-off; the
+// existing profile's CRC must check out before anything is written. Mice without onboard profiles
+// fall back to host-mode DPI and report rate.
 
 export const REPORT = { SHORT: 0x10, LONG: 0x11 };
 export const FEATURE = { ROOT: 0x0000, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004, DPI: 0x2201, RATE: 0x8060, ONBOARD: 0x8100 };
 export const RATE_MS = { 1: 8, 2: 4, 3: 2, 4: 1 }; // settings value -> ms per report (125/250/500/1000 Hz)
 const SW = 0x0a;
 const HOST_MODE = 2;
+const ONBOARD_MODE = 1;
+const ROM_SECTOR = 0x100;
+const PROFILE = { RATE: 0, DEFAULT_DPI: 1, DPI: 3, DPI_SLOTS: 5, BUTTONS: 32 };
+const SPECIAL_DPI_CYCLE = 0x05;
+// App mouse action id -> HID++ mouse-button bitmask (left, middle, right, back, forward).
+const MOUSE_BITS = { 1: 0x01, 2: 0x04, 3: 0x02, 7: 0x08, 8: 0x10 };
+
+// CRC-16/CCITT-FALSE, stored big-endian in the last two bytes of each sector.
+export function crc16(bytes) {
+  let crc = 0xffff;
+  for (const b of bytes) {
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+  }
+  return crc;
+}
+export const crcOk = (sec) => crc16(sec.subarray(0, sec.length - 2)) === ((sec[sec.length - 2] << 8) | sec[sec.length - 1]);
+export function sealCrc(sec) {
+  const c = crc16(sec.subarray(0, sec.length - 2));
+  sec[sec.length - 2] = c >> 8; sec[sec.length - 1] = c & 0xff;
+  return sec;
+}
+
+// 4-byte onboard binding for an app button action; null keeps the mouse's current binding.
+export function encodeBinding(a) {
+  switch (a?.type) {
+    case undefined: case null: case 'default': return null;
+    case 'disable': return [0xff, 0, 0, 0];
+    case 'mouse': {
+      const bit = MOUSE_BITS[a.id];
+      if (!bit) throw new Unsupported('Double click and scroll as a button action');
+      return [0x80, 0x01, bit >> 8, bit & 0xff];
+    }
+    case 'key':
+      if (a.code >= 0xe0 && a.code <= 0xe7) return [0x80, 0x02, (a.mods & 0xff) | (1 << (a.code - 0xe0)), 0];
+      return [0x80, 0x02, a.mods & 0xff, a.code & 0xff];
+    case 'media': return [0x80, 0x03, (a.usage >> 8) & 0xff, a.usage & 0xff];
+    case 'dpiLoop': return [0x90, SPECIAL_DPI_CYCLE, 0, 0];
+    case 'macro': throw new Unsupported('Macros on buttons');
+    default: throw new Unsupported(`Button action "${a.type}"`);
+  }
+}
+
+export function applyButtons(profile, buttons, count) {
+  for (let i = 0; i < count; i++) {
+    const b = encodeBinding(buttons?.[i]);
+    if (b) profile.set(b, PROFILE.BUTTONS + i * 4);
+  }
+  return profile;
+}
+
+export function applyConfig(profile, m) {
+  const ms = RATE_MS[m.rate];
+  if (ms) profile[PROFILE.RATE] = ms;
+  for (let i = 0; i < PROFILE.DPI_SLOTS; i++) {
+    const v = i < m.dpi.length ? clampDpi(m.dpi[i]) : 0;
+    profile[PROFILE.DPI + i * 2] = v & 0xff; profile[PROFILE.DPI + i * 2 + 1] = v >> 8;
+  }
+  profile[PROFILE.DEFAULT_DPI] = Math.min(m.dpiIndex, m.dpi.length - 1);
+  return profile;
+}
+
 
 export const clampDpi = (v) => Math.max(100, Math.min(12000, Math.round((v | 0) / 50) * 50));
 
@@ -87,13 +151,82 @@ export class HidPP extends Mouse55 {
   }
 
   setLighting() { return Promise.reject(new Unsupported('Lighting')); }
-  setButtons() { return Promise.reject(new Unsupported('Button remapping')); }
   setMacros() { return Promise.reject(new Unsupported('Macros')); }
 
-  // Host mode lets the DPI and report rate below take effect; the mouse returns to its onboard
-  // profile when it is switched off.
+  async onboardInfo() {
+    const r = await this.call(FEATURE.ONBOARD, 0, []);
+    if (!r) return null;
+    return { buttons: r[8], sectorSize: (r[10] << 8) | r[11] };
+  }
+
+  async readSector(sector, size) {
+    const out = new Uint8Array(size);
+    for (let off = 0; off < size; off += 16) {
+      const o = Math.min(off, size - 16);
+      const r = await this.call(FEATURE.ONBOARD, 5, [sector >> 8, sector & 0xff, o >> 8, o & 0xff]);
+      out.set(r.subarray(3, 19), o);
+    }
+    return out;
+  }
+
+  async writeSector(sector, data) {
+    this.log('⚙', `Writing onboard sector 0x${sector.toString(16)} (${data.length} bytes)`);
+    await this.call(FEATURE.ONBOARD, 6, [sector >> 8, sector & 0xff, 0, 0, data.length >> 8, data.length & 0xff]);
+    for (let off = 0; off < data.length; off += 16) await this.call(FEATURE.ONBOARD, 7, Array.from(data.subarray(off, off + 16)));
+    await this.call(FEATURE.ONBOARD, 8, []);
+  }
+
+  // Read the active profile, let `edit` change it, and write it back to a user sector.
+  // A ROM profile (read-only) is copied to user sector 1 and enabled in the profile directory.
+  async editProfile(edit) {
+    const info = await this.onboardInfo();
+    if (!info) return false;
+    const cur = await this.call(FEATURE.ONBOARD, 4, []);
+    const sector = (cur[3] << 8) | cur[4];
+    const profile = await this.readSector(sector, info.sectorSize);
+    if (!crcOk(profile)) throw new Error(`Onboard profile 0x${sector.toString(16)} has an unexpected format; nothing was written`);
+    edit(profile, info);
+    sealCrc(profile);
+    let target = sector;
+    if (sector >= ROM_SECTOR) {
+      target = 1;
+      const dir = await this.readSector(0, info.sectorSize);
+      const empty = !crcOk(dir) || (dir[0] === 0xff && dir[1] === 0xff);
+      if (empty) {
+        dir.fill(0xff);
+        dir.set([0x00, 0x01, 0x01, 0x00], 0);
+      } else {
+        let i = 0;
+        while (i + 4 <= dir.length - 2 && !(dir[i] === 0xff && dir[i + 1] === 0xff) && ((dir[i] << 8) | dir[i + 1]) !== target) i += 4;
+        if (((dir[i] << 8) | dir[i + 1]) !== target) throw new Error('Unexpected onboard profile directory; nothing was written');
+        dir[i + 2] = 1;
+      }
+      await this.writeSector(target, profile);
+      await this.writeSector(0, sealCrc(dir));
+    } else {
+      await this.writeSector(target, profile);
+    }
+    await this.call(FEATURE.ONBOARD, 1, [ONBOARD_MODE]);
+    await this.call(FEATURE.ONBOARD, 3, [target >> 8, target & 0xff]);
+    return true;
+  }
+
+  setButtons(buttons) {
+    return this.exclusive(async () => {
+      for (const b of buttons ?? []) encodeBinding(b); // reject unsupported actions before touching the mouse
+      if (!this.link) { this.log('⚙', 'Simulated onboard profile write (buttons)'); return; }
+      if (!(await this.editProfile((p, info) => applyButtons(p, buttons, Math.min(info.buttons, 16))))) {
+        throw new Unsupported('Button remapping without onboard profiles');
+      }
+    });
+  }
+
+  // Onboard profile when available (persists); otherwise host-mode DPI and report rate, which last
+  // until the mouse is switched off.
   setMouseConfig(m) {
     return this.exclusive(async () => {
+      if (!this.link) { this.log('⚙', 'Simulated onboard profile write (DPI, rate)'); return; }
+      if (await this.editProfile((p) => applyConfig(p, m))) return;
       await this.call(FEATURE.ONBOARD, 1, [HOST_MODE]);
       const dpi = clampDpi(m.dpi[m.dpiIndex]);
       await this.call(FEATURE.DPI, 3, [0, dpi >> 8, dpi & 0xff]);

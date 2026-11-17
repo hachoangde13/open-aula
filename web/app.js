@@ -750,7 +750,8 @@ function initButtons() {
   root.innerHTML = '';
   if (!state.mouse) return;
   const M = state.mouse;
-  const types = [['default', 'Default'], ['disable', 'Disabled'], ['mouse', 'Mouse'], ['key', 'Keyboard key'], ['media', 'Media'], ['dpiLoop', 'DPI cycle'], ['macro', 'Macro']];
+  const types = [['default', 'Default'], ['disable', 'Disabled'], ['mouse', 'Mouse'], ['key', 'Keyboard key'], ['media', 'Media'], ['dpiLoop', 'DPI cycle'], ['macro', 'Macro']]
+    .filter(([v]) => !model.buttonTypes || model.buttonTypes.includes(v));
   const view = $('#mouse-view');
   view.innerHTML = model.image?.src ? `<img src="${model.image.src}" alt="">` : '';
   view.hidden = !model.image?.src;

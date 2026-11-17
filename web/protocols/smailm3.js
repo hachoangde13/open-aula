@@ -17,6 +17,9 @@ export const BUTTON_SLOTS = [
   { slot: 2, name: 'Wheel click', x: 0, y: 0 },
   { slot: 3, name: 'Back (side)', x: 0, y: 0 },
   { slot: 4, name: 'Forward (side)', x: 0, y: 0 },
+  { slot: 5, name: 'DPI button', x: 0, y: 0 },
+  { slot: 6, name: 'Scroll up', x: 0, y: 0 },
+  { slot: 7, name: 'Scroll down', x: 0, y: 0 },
 ];
 export const MACRO_PLAY = ['Repeat N times', 'Repeat until released', 'Repeat until any click'];
 
@@ -28,11 +31,12 @@ function frame(head, data = [], at = head.length) {
   return p;
 }
 
-// Slots 0-4 are user buttons, 5 = DPI (fixed), 6/7 = wheel up/down; the rest of the 44-byte block is zero.
+// Slots 0-4 are the buttons, 5 = DPI, 6/7 = wheel up/down; the rest of the 44-byte block is zero.
+// The vendor app never remaps slots 5-7; the SC620 (same family) accepts them.
 export function keysBlock(buttons) {
   const b = new Uint8Array(44);
   for (let i = 0; i < 8; i++) {
-    const own = i < 5 ? encodeButton(buttons?.[i]) : null;
+    const own = encodeButton(buttons?.[i]);
     b.set(own ?? DEFAULT_BUTTONS[i], i * 4);
   }
   return b;
