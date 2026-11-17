@@ -161,11 +161,14 @@ function setModel(m) {
   setStatus();
 }
 
+// Several models can match one device (shared 2.4G dongle): keep the model already selected.
+const preferredModel = (dev) => (matchesId(dev, model.usb) ? model : modelForDevice(dev));
+
 async function connect() {
   try {
     const picked = await navigator.hid.requestDevice({ filters: hidFilters() });
     if (!picked.length) return;
-    const m = modelForDevice(picked[0]);
+    const m = preferredModel(picked[0]);
     await sync(m?.id);
     if (!m) toast('That device is not a supported model', true);
   } catch (e) {
@@ -175,9 +178,14 @@ async function connect() {
 
 async function disconnect() {
   if (kb.mode === 'sim') return;
-  for (const d of devsOf(kb)) if (d.opened) await d.close();
-  connected.delete(kb.model.id);
-  dismissed.add(kb.model.id);
+  const devs = devsOf(kb);
+  for (const d of devs) if (d.opened) await d.close();
+  // Models that share a device (same 2.4G dongle) go away together.
+  for (const [id, k] of [...connected]) {
+    if (k !== kb && !devsOf(k).some((d) => devs.includes(d))) continue;
+    connected.delete(id);
+    dismissed.add(id);
+  }
   activate(connected.values().next().value);
 }
 
@@ -202,7 +210,7 @@ function initConnection() {
       else setStatus();
     }
   });
-  navigator.hid.addEventListener('connect', (e) => sync(modelForDevice(e.device)?.id));
+  navigator.hid.addEventListener('connect', (e) => sync(preferredModel(e.device)?.id));
   sync(model.id).finally(setStatus);
   setInterval(() => kb.mode === '2.4g' && refreshBattery(), 60_000);
 }

@@ -8,7 +8,9 @@ export default {
   protocol: 'aula04',
   usb: [
     { vendorId: 0x0c45, productId: 0x800a, role: 'usb', notName: /F75\s*-?\s*Max/i },
-    { vendorId: 0x05ac, productId: 0x024f, role: 'dongle', notName: /F75\s*-?\s*Max/i },
+    // The 2.4G dongle does not carry the keyboard's name, so the F75 Max lists the same dongle;
+    // with a dongle both models connect and the header's device list picks one.
+    { vendorId: 0x05ac, productId: 0x024f, role: 'dongle' },
   ],
   layout: KEYS,
   image: { src: 'assets/s75pro.png', width: 800, height: 300 },

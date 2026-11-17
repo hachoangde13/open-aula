@@ -8,7 +8,7 @@ import { Mouse55 } from './mouse55.js';
 // fall back to host-mode DPI and report rate.
 
 export const REPORT = { SHORT: 0x10, LONG: 0x11 };
-export const FEATURE = { ROOT: 0x0000, FW_VERSION: 0x0003, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004, DPI: 0x2201, RATE: 0x8060, ONBOARD: 0x8100 };
+export const FEATURE = { ROOT: 0x0000, FW_VERSION: 0x0003, BATTERY: 0x1000, BATTERY_VOLTAGE: 0x1001, UNIFIED_BATTERY: 0x1004, DPI: 0x2201, RATE: 0x8060, ONBOARD: 0x8100 };
 export const RATE_MS = { 1: 8, 2: 4, 3: 2, 4: 1 }; // settings value -> ms per report (125/250/500/1000 Hz)
 const SW = 0x0a;
 const HOST_MODE = 2;
@@ -29,6 +29,12 @@ export function crc16(bytes) {
   return crc;
 }
 export const crcOk = (sec) => crc16(sec.subarray(0, sec.length - 2)) === ((sec[sec.length - 2] << 8) | sec[sec.length - 1]);
+// Sanity check for a profile sector without a trustworthy CRC: a real report rate and DPI list.
+export function plausibleProfile(p) {
+  if (![1, 2, 4, 8].includes(p[PROFILE.RATE]) || p[PROFILE.DEFAULT_DPI] >= PROFILE.DPI_SLOTS) return false;
+  const first = p[PROFILE.DPI] | (p[PROFILE.DPI + 1] << 8);
+  return first >= 50 && first <= 32000;
+}
 export function sealCrc(sec) {
   const c = crc16(sec.subarray(0, sec.length - 2));
   sec[sec.length - 2] = c >> 8; sec[sec.length - 1] = c & 0xff;
@@ -156,7 +162,11 @@ export class HidPP extends Mouse55 {
   async onboardInfo() {
     const r = await this.call(FEATURE.ONBOARD, 0, []);
     if (!r) return null;
-    return { buttons: r[8], sectorSize: (r[10] << 8) | r[11] };
+    // Same checks as libratbag: memory model 1, a known profile format, macro format 1.
+    if (r[3] !== 1 || r[4] < 1 || r[4] > 5 || r[5] !== 1) throw new Error('Unknown onboard profile format; nothing was written');
+    const info = { profiles: r[6], buttons: r[8], sectorSize: (r[10] << 8) | r[11] };
+    if (info.sectorSize < 64 || info.sectorSize > 1024 || !info.profiles) throw new Error('Unexpected onboard memory layout; nothing was written');
+    return info;
   }
 
   async readSector(sector, size) {
@@ -182,29 +192,29 @@ export class HidPP extends Mouse55 {
     const info = await this.onboardInfo();
     if (!info) return false;
     const cur = await this.call(FEATURE.ONBOARD, 4, []);
-    const sector = (cur[3] << 8) | cur[4];
+    let sector = (cur[3] << 8) | cur[4];
+    const user = sector >= 1 && sector <= info.profiles;
+    // Anything that is not a user profile (ROM profile, or no active profile) starts from ROM profile 1.
+    if (!user) sector = ROM_SECTOR + 1;
     const profile = await this.readSector(sector, info.sectorSize);
-    if (!crcOk(profile)) throw new Error(`Onboard profile 0x${sector.toString(16)} has an unexpected format; nothing was written`);
+    // User sectors carry a CRC; ROM sectors are not guaranteed to (libratbag skips the check there).
+    if (user ? !crcOk(profile) : !plausibleProfile(profile)) {
+      throw new Error(`Onboard profile 0x${sector.toString(16)} has an unexpected format; nothing was written`);
+    }
     edit(profile, info);
     sealCrc(profile);
-    let target = sector;
-    if (sector >= ROM_SECTOR) {
-      target = 1;
-      const dir = await this.readSector(0, info.sectorSize);
-      const empty = !crcOk(dir) || (dir[0] === 0xff && dir[1] === 0xff);
-      if (empty) {
-        dir.fill(0xff);
-        dir.set([0x00, 0x01, 0x01, 0x00], 0);
-      } else {
-        let i = 0;
-        while (i + 4 <= dir.length - 2 && !(dir[i] === 0xff && dir[i + 1] === 0xff) && ((dir[i] << 8) | dir[i + 1]) !== target) i += 4;
-        if (((dir[i] << 8) | dir[i + 1]) !== target) throw new Error('Unexpected onboard profile directory; nothing was written');
-        dir[i + 2] = 1;
+    const target = user ? sector : 1;
+    await this.writeSector(target, profile);
+    if (!user) {
+      // The G305 answers "invalid argument" when the directory was never written; treat that as empty.
+      const old = await this.readSector(0, info.sectorSize).catch(() => null);
+      const dir = new Uint8Array(info.sectorSize).fill(0xff);
+      for (let i = 0; i < info.profiles; i++) {
+        const was = old && crcOk(old) && ((old[i * 4] << 8) | old[i * 4 + 1]) === i + 1 ? old[i * 4 + 2] : 0;
+        dir.set([0x00, i + 1, i === 0 ? 1 : was ? 1 : 0, 0x00], i * 4);
       }
-      await this.writeSector(target, profile);
+      dir.set([0xff, 0xff, 0x00, 0x00], info.profiles * 4);
       await this.writeSector(0, sealCrc(dir));
-    } else {
-      await this.writeSector(target, profile);
     }
     await this.call(FEATURE.ONBOARD, 1, [ONBOARD_MODE]);
     await this.call(FEATURE.ONBOARD, 3, [target >> 8, target & 0xff]);
@@ -243,7 +253,7 @@ export class HidPP extends Mouse55 {
       const h = (v, w) => v.toString(16).toUpperCase().padStart(w, '0');
       for (let i = 0; i < n[3]; i++) {
         const r = await this.call(FEATURE.FW_VERSION, 1, [i]);
-        if (r[3] !== 0) continue;
+        if ((r[3] & 0x0f) !== 0) continue; // 0 = main application
         const prefix = String.fromCharCode(...r.subarray(4, 7)).replace(/\0/g, '').trim();
         return `${prefix} ${h(r[7], 2)}.${h(r[8], 2)}.B${h((r[9] << 8) | r[10], 4)}`;
       }
@@ -257,7 +267,12 @@ export class HidPP extends Mouse55 {
       const u = await this.call(FEATURE.UNIFIED_BATTERY, 1, []).catch(() => null);
       if (u) return Math.min(100, u[3]);
       const b = await this.call(FEATURE.BATTERY, 0, []).catch(() => null);
-      return b ? Math.min(100, b[3]) : null;
+      if (b) return Math.min(100, b[3]);
+      // G304/G305: only the cell voltage (mV, one AA). Rough estimate: 1.0 V empty, 1.5 V full.
+      const v = await this.call(FEATURE.BATTERY_VOLTAGE, 0, []).catch(() => null);
+      if (!v) return null;
+      const mv = (v[3] << 8) | v[4];
+      return Math.max(0, Math.min(100, Math.round((mv - 1000) / 5)));
     });
   }
 }

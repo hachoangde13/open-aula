@@ -98,8 +98,11 @@ export class SmailM3 extends Mouse55 {
   static async discover(devices, model) {
     for (const d of devices) {
       const role = model.usb.find((u) => u.vendorId === d.vendorId)?.role;
-      const c = d.collections.find((c) => c.usagePage === USAGE.usagePage && c.usage === USAGE.usage);
-      if (!role || !c?.outputReports?.some((r) => r.reportId === REPORT_ID)) continue;
+      // The vendor app picks the 0xFF01/0x10 collection and writes report 0xF0; the report may be
+      // declared in another collection of the same interface.
+      const vendor = d.collections.some((c) => c.usagePage === USAGE.usagePage && c.usage === USAGE.usage);
+      const report = d.collections.some((c) => c.outputReports?.some((r) => r.reportId === REPORT_ID));
+      if (!role || !vendor || !report) continue;
       if (!d.opened) await d.open();
       return { [role === 'dongle' ? 'dongle' : 'main']: { dev: d, reportId: REPORT_ID } };
     }
