@@ -136,8 +136,11 @@ async function pullFromDevice(k) {
   const c = await k.readMouseConfig();
   if (!c || k !== kb) return false;
   const { dpi, dpiIndex, buttons, ...settings } = c;
-  const colors = state.mouse.dpiColors;
-  state.mouse = { ...state.mouse, dpi, dpiIndex, buttons, dpiColors: dpi.map((_, i) => colors[i] ?? [255, 255, 255]) };
+  if (state.mouse && buttons) state.mouse.buttons = buttons;
+  if (state.mouse && dpi) {
+    const colors = state.mouse.dpiColors ?? [];
+    Object.assign(state.mouse, { dpi, dpiIndex, dpiColors: dpi.map((_, i) => colors[i] ?? [255, 255, 255]) });
+  }
   for (const f of model.settings ?? []) if (f.key in settings) state.settings[f.key] = settings[f.key];
   save();
   initDpi(); initButtons(); initSettings();
@@ -778,12 +781,17 @@ function initDpi() {
 }
 
 function initButtons() {
+  const pad = model.kind === 'gamepad';
+  $('#btn-title').textContent = pad ? 'Controller buttons' : 'Mouse buttons';
+  $('#btn-hint').textContent = pad
+    ? 'Applies to the active profile. Mapping L4 or R4 to a button removes the macro stored on it; "Default" keeps it.'
+    : 'Buttons bound to a macro also upload all macros.';
   const root = $('#btn-list');
   root.innerHTML = '';
   if (!state.mouse) return;
   const M = state.mouse;
-  const types = [['default', 'Default'], ['disable', 'Disabled'], ['mouse', 'Mouse'], ['key', 'Keyboard key'], ['media', 'Media'], ['dpiLoop', 'DPI cycle'], ['macro', 'Macro']]
-    .filter(([v]) => !model.buttonTypes || model.buttonTypes.includes(v));
+  const types = [['default', 'Default'], ['disable', 'Disabled'], ['mouse', 'Mouse'], ['key', 'Keyboard key'], ['media', 'Media'], ['dpiLoop', 'DPI cycle'], ['macro', 'Macro'], ['pad', 'Gamepad button']]
+    .filter(([v]) => (model.buttonTypes ? model.buttonTypes.includes(v) : v !== 'pad'));
   const view = $('#mouse-view');
   view.innerHTML = model.image?.src ? `<img src="${model.image.src}" alt="">` : '';
   view.hidden = !model.image?.src;
@@ -796,6 +804,7 @@ function initButtons() {
       mouse: `<select data-f="id">${MOUSE_ACTIONS.map((m) => `<option value="${m.id}" ${a.id === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</select>`,
       key: `${[['Ctrl', 1], ['Shift', 2], ['Alt', 4], ['Win', 8]].map(([n, bit]) => `<label class="check"><input type="checkbox" data-m="${bit}" ${(a.mods ?? 0) & bit ? 'checked' : ''}> ${n}</label>`).join('')}
         <select data-f="code">${Object.entries(HID_NAMES).map(([c, n]) => `<option value="${c}" ${a.code === +c ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
+      pad: `<select data-f="code">${(model.padTargets ?? []).map(([n, c]) => `<option value="${c}" ${a.code === c ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
       media: `<select data-f="usage">${MEDIA_ACTIONS.map(([n, u]) => `<option value="${u}" ${a.usage === u ? 'selected' : ''}>${n}</option>`).join('')}</select>`,
       macro: `<select data-f="index">${state.macros.map((m, j) => `<option value="${j}" ${a.index === j ? 'selected' : ''}>${j + 1}. ${escapeHtml(m.name)}</option>`).join('')}</select>
         <select data-f="mode">${(model.macroPlay ?? []).map((n, j) => `<option value="${j}" ${a.mode === j ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -825,7 +834,8 @@ function initButtons() {
         const f = el.dataset.f;
         if (f === 'type') {
           const fresh = { default: null, disable: { type: 'disable' }, mouse: { type: 'mouse', id: 1 }, key: { type: 'key', code: 0x04, mods: 0 },
-            media: { type: 'media', usage: MEDIA_ACTIONS[0][1] }, dpiLoop: { type: 'dpiLoop' }, macro: { type: 'macro', index: 0, mode: 0, loops: 1 } }[el.value];
+            media: { type: 'media', usage: MEDIA_ACTIONS[0][1] }, dpiLoop: { type: 'dpiLoop' }, macro: { type: 'macro', index: 0, mode: 0, loops: 1 },
+            pad: { type: 'pad', code: (model.padTargets ?? [[0, 1]])[0][1] } }[el.value];
           if (el.value === 'macro' && !state.macros.length) { toast('Create a macro on the Macros tab first', true); el.value = a.type; return; }
           M.buttons[i] = fresh;
         } else {
@@ -876,13 +886,14 @@ function initUpdates() {
     if (kb.mode === 'sim') throw new Error('Connect a real device first');
     const v = kb.firmware ? await kb.firmware() : null;
     $('#fw-value').textContent = v ? `Firmware ${v}` : 'The device did not answer the firmware query (see the Log tab).';
-    if (v && u.latest) $('#fw-value').textContent += v.replace(/^\D+/, '') === u.latest ? ' (latest)' : ` (latest known: ${u.latest})`;
+    if (v && u.latest) $('#fw-value').textContent += (v.match(/\d+(\.\d+)+/) ?? [])[0] === u.latest ? ' (latest)' : ` (latest known: ${u.latest})`;
   });
 }
 
 // ---------- settings ----------
 
 function initSettings() {
+  $('#tab-settings h2').textContent = { mouse: 'Mouse', gamepad: 'Controller' }[model.kind] ?? 'Keyboard';
   const S = state.settings;
   const root = $('#s-fields');
   root.innerHTML = '';
@@ -911,6 +922,11 @@ function initSettings() {
   }
   $('#s-reset-keys').onclick = (e) => confirm('Reset all key assignments on the keyboard to factory defaults?') && run(e.target, 'Keymap reset', () => kb.resetKeys());
   $('#s-reset-all').onclick = (e) => confirm('Factory reset the keyboard? This clears lighting, keymaps and macros.') && run(e.target, 'Factory reset', () => kb.factoryReset());
+  $('#s-read').hidden = !kb.readMouseConfig;
+  $('#s-read').onclick = (e) => run(e.target, 'Read', async () => {
+    if (kb.mode === 'sim') throw new Error('Connect the device first');
+    if (!(await pullFromDevice(kb))) throw new Error('Nothing to read');
+  });
   $('#s-apply').onclick = (e) => run(e.target, 'Settings', () => (model.kind === 'mouse' ? kb.setMouseConfig(mouseConfig()) : kb.setSettings(S)));
   $('#s-delay').value = state.delay;
   $('#s-delay').onchange = (e) => { state.delay = Math.max(5, +e.target.value || 35); kb.delay = state.delay; save(); };
